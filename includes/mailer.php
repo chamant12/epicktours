@@ -1,0 +1,159 @@
+<?php
+/**
+ * Sending email. Uses SMTP when an SMTP host is set in Admin → Settings
+ * (recommended – far less likely to land in spam), otherwise PHP's mail().
+ */
+
+/**
+ * Send an HTML email (with a plain-text copy).
+ * Returns true on success or an error message string on failure.
+ */
+function send_mail(array $to, string $subject, string $html, ?string $replyTo = null)
+{
+    $to = array_values(array_filter(array_map('trim', $to), fn ($a) => filter_var($a, FILTER_VALIDATE_EMAIL)));
+    if (!$to) {
+        return 'No valid recipient email address.';
+    }
+
+    $fromEmail = setting('mail_from_email') ?: setting('email');
+    $fromName = setting('mail_from_name') ?: setting('site_name');
+    if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+        return 'The "From" email address in Settings is not valid.';
+    }
+    $clean = fn ($s) => trim(str_replace(["\r", "\n"], ' ', (string) $s));
+    $encode = fn ($s) => '=?UTF-8?B?' . base64_encode($clean($s)) . '?=';
+
+    $boundary = 'b' . bin2hex(random_bytes(12));
+    $text = trim(html_entity_decode(strip_tags(preg_replace(['/<br\s*\/?>/i', '/<\/(p|tr|h\d|div)>/i'], "\n", $html)), ENT_QUOTES, 'UTF-8'));
+    $text = preg_replace("/[ \t]+/", ' ', preg_replace("/\n{3,}/", "\n\n", $text));
+
+    $domain = substr(strrchr($fromEmail, '@'), 1);
+    $headers = [
+        'Date: ' . date('r'),
+        'From: ' . $encode($fromName) . ' <' . $fromEmail . '>',
+        'Message-ID: <' . bin2hex(random_bytes(10)) . '@' . $domain . '>',
+        'MIME-Version: 1.0',
+        'Content-Type: multipart/alternative; boundary="' . $boundary . '"',
+    ];
+    if ($replyTo && filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
+        $headers[] = 'Reply-To: ' . $clean($replyTo);
+    }
+
+    $body = "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+        . chunk_split(base64_encode($text))
+        . "--{$boundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+        . chunk_split(base64_encode($html))
+        . "--{$boundary}--\r\n";
+
+    try {
+        if (setting('smtp_host') !== '') {
+            $message = implode("\r\n", array_merge($headers, ['To: ' . implode(', ', $to), 'Subject: ' . $encode($subject)])) . "\r\n\r\n" . $body;
+            smtp_send($fromEmail, $to, $message);
+        } else {
+            if (!@mail(implode(', ', $to), $encode($subject), $body, implode("\r\n", $headers))) {
+                return 'The server could not send the email with PHP mail(). Set up SMTP in Settings.';
+            }
+        }
+    } catch (RuntimeException $ex) {
+        return $ex->getMessage();
+    }
+    return true;
+}
+
+/** Minimal SMTP client (STARTTLS/SSL + AUTH LOGIN). Throws RuntimeException. */
+function smtp_send(string $from, array $to, string $message): void
+{
+    $host = setting('smtp_host');
+    $port = (int) (setting('smtp_port') ?: 587);
+    $enc = setting('smtp_encryption') ?: 'tls';
+    $user = setting('smtp_username');
+    $pass = setting('smtp_password');
+
+    $fp = @stream_socket_client(($enc === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port, $errno, $errstr, 15);
+    if (!$fp) {
+        throw new RuntimeException("Could not connect to the SMTP server {$host}:{$port} ({$errstr}).");
+    }
+    stream_set_timeout($fp, 20);
+
+    $read = function () use ($fp): string {
+        $data = '';
+        while (($line = fgets($fp, 1024)) !== false) {
+            $data .= $line;
+            if (strlen($line) < 4 || $line[3] === ' ') {
+                break;
+            }
+        }
+        return $data;
+    };
+    $cmd = function (?string $command, array $expect) use ($fp, $read): string {
+        if ($command !== null) {
+            fwrite($fp, $command . "\r\n");
+        }
+        $reply = $read();
+        if (!in_array((int) substr($reply, 0, 3), $expect, true)) {
+            $shown = $command && stripos($command, 'AUTH') === false && strlen($command) < 80 ? $command : 'SMTP step';
+            throw new RuntimeException('SMTP error after "' . $shown . '": ' . trim($reply ?: 'no reply'));
+        }
+        return $reply;
+    };
+
+    try {
+        $cmd(null, [220]);
+        $ehlo = 'EHLO ' . (gethostname() ?: 'localhost');
+        $cmd($ehlo, [250]);
+        if ($enc === 'tls') {
+            $cmd('STARTTLS', [220]);
+            if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                throw new RuntimeException('Could not start TLS encryption with the SMTP server.');
+            }
+            $cmd($ehlo, [250]);
+        }
+        if ($user !== '') {
+            $cmd('AUTH LOGIN', [334]);
+            $cmd(base64_encode($user), [334]);
+            try {
+                $cmd(base64_encode($pass), [235]);
+            } catch (RuntimeException $ex) {
+                throw new RuntimeException('The SMTP username or password was rejected.');
+            }
+        }
+        $cmd('MAIL FROM:<' . $from . '>', [250]);
+        foreach ($to as $rcpt) {
+            $cmd('RCPT TO:<' . $rcpt . '>', [250, 251]);
+        }
+        $cmd('DATA', [354]);
+        // Normalise line endings and escape lines starting with a dot
+        $message = preg_replace('/(?<!\r)\n/', "\r\n", $message);
+        $message = preg_replace('/^\./m', '..', $message);
+        $cmd($message . "\r\n.", [250]);
+        fwrite($fp, "QUIT\r\n");
+    } finally {
+        fclose($fp);
+    }
+}
+
+/** Who gets contact form notifications: the Settings list, or every active admin. */
+function enquiry_recipients(): array
+{
+    $list = array_filter(array_map('trim', explode(',', setting('enquiry_email_to'))));
+    if ($list) {
+        return $list;
+    }
+    return q("SELECT u.email FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = 'admin' AND u.is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
+}
+
+/** Absolute base URL of the site, e.g. https://example.com/ (from Settings, else the request). */
+function site_url(): string
+{
+    $url = setting('site_url');
+    if ($url === '') {
+        $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $host = preg_replace('/[^a-z0-9.\-:]/i', '', $_SERVER['HTTP_HOST'] ?? 'localhost');
+        $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+        if (defined('IN_ADMIN')) {
+            $dir = rtrim(dirname($dir), '/');
+        }
+        $url = ($https ? 'https' : 'http') . '://' . $host . $dir;
+    }
+    return rtrim($url, '/') . '/';
+}

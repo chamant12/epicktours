@@ -1,0 +1,4 @@
+# Partial files (starting with _) are only included by other pages
+<FilesMatch "^_">
+    Require all denied
+</FilesMatch>

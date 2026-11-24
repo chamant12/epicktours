@@ -46,7 +46,7 @@ function send_mail(array $to, string $subject, string $html, ?string $replyTo = 
         . "--{$boundary}--\r\n";
 
     try {
-        if (setting('smtp_host') !== '') {
+        if (smtp_config()['host'] !== '') {
             $message = implode("\r\n", array_merge($headers, ['To: ' . implode(', ', $to), 'Subject: ' . $encode($subject)])) . "\r\n\r\n" . $body;
             smtp_send($fromEmail, $to, $message);
         } else {
@@ -60,14 +60,42 @@ function send_mail(array $to, string $subject, string $html, ?string $replyTo = 
     return true;
 }
 
+/**
+ * SMTP connection details. SMTP_* constants in includes/config.local.php
+ * (e.g. Amazon SES credentials) take priority over Admin → Settings, so the
+ * password never has to be stored in the database.
+ */
+function smtp_config(): array
+{
+    if (smtp_from_config()) {
+        return [
+            'host' => (string) SMTP_HOST,
+            'port' => (int) (defined('SMTP_PORT') ? SMTP_PORT : 587),
+            'enc'  => defined('SMTP_ENCRYPTION') ? (string) SMTP_ENCRYPTION : 'tls',
+            'user' => defined('SMTP_USERNAME') ? (string) SMTP_USERNAME : '',
+            'pass' => defined('SMTP_PASSWORD') ? (string) SMTP_PASSWORD : '',
+        ];
+    }
+    return [
+        'host' => setting('smtp_host'),
+        'port' => (int) (setting('smtp_port') ?: 587),
+        'enc'  => setting('smtp_encryption') ?: 'tls',
+        'user' => setting('smtp_username'),
+        'pass' => setting('smtp_password'),
+    ];
+}
+
+/** True when the SMTP server is set in config.local.php rather than in Settings. */
+function smtp_from_config(): bool
+{
+    return defined('SMTP_HOST') && SMTP_HOST !== '';
+}
+
 /** Minimal SMTP client (STARTTLS/SSL + AUTH LOGIN). Throws RuntimeException. */
 function smtp_send(string $from, array $to, string $message): void
 {
-    $host = setting('smtp_host');
-    $port = (int) (setting('smtp_port') ?: 587);
-    $enc = setting('smtp_encryption') ?: 'tls';
-    $user = setting('smtp_username');
-    $pass = setting('smtp_password');
+    ['host' => $host, 'port' => $port, 'enc' => $enc, 'user' => $user, 'pass' => $pass] = smtp_config();
+    $isSes = (bool) preg_match('/^email-smtp\.[a-z0-9-]+\.amazonaws\.com$/i', $host);
 
     $fp = @stream_socket_client(($enc === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port, $errno, $errstr, 15);
     if (!$fp) {
@@ -114,7 +142,9 @@ function smtp_send(string $from, array $to, string $message): void
             try {
                 $cmd(base64_encode($pass), [235]);
             } catch (RuntimeException $ex) {
-                throw new RuntimeException('The SMTP username or password was rejected.');
+                throw new RuntimeException('The SMTP username or password was rejected.' . ($isSes
+                    ? ' For Amazon SES use the SMTP credentials created in the SES console (SMTP settings → Create SMTP credentials), not IAM access keys, and make sure they belong to the same region as the SMTP server.'
+                    : ''));
             }
         }
         $cmd('MAIL FROM:<' . $from . '>', [250]);
@@ -127,6 +157,11 @@ function smtp_send(string $from, array $to, string $message): void
         $message = preg_replace('/^\./m', '..', $message);
         $cmd($message . "\r\n.", [250]);
         fwrite($fp, "QUIT\r\n");
+    } catch (RuntimeException $ex) {
+        if ($isSes && stripos($ex->getMessage(), 'not verified') !== false) {
+            throw new RuntimeException($ex->getMessage() . ' – Amazon SES only sends from verified addresses/domains. While your SES account is in the sandbox, every recipient must be verified too (or request production access in the SES console).');
+        }
+        throw $ex;
     } finally {
         fclose($fp);
     }

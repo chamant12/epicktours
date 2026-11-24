@@ -96,6 +96,12 @@ require __DIR__ . '/_header.php';
                     <?= cms_field($key, $f, (string) $value) ?>
                 <?php endforeach; ?>
                 <?php if ($section === 'Contact form emails'): ?>
+                    <?php if (smtp_from_config()): ?>
+                        <div class="alert alert-info small">
+                            SMTP is set in <code>includes/config.local.php</code> (server: <strong><?= e(smtp_config()['host']) ?></strong>),
+                            so the SMTP fields above are ignored.
+                        </div>
+                    <?php endif; ?>
                     <p class="small text-muted mb-0">
                         Enquiries currently go to: <strong><?= e(implode(', ', enquiry_recipients()) ?: 'nobody') ?></strong>.
                         Save first, then use <em>Send test email</em> below to check delivery.

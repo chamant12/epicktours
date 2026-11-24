@@ -30,7 +30,10 @@ function bg(?string $path, string $size = 'large'): string
     if (!$path || !is_file(ROOT . '/' . $path)) {
         return '';
     }
-    return "--img:url('" . e(img_url($path, $size)) . "')";
+    $url = e(img_url($path, $size));
+    // Direct background-image (with !important) so the photo always wins over
+    // the stylesheet; --img is kept for any CSS that still reads it.
+    return "--img:url('{$url}'); background-image:url('{$url}') !important";
 }
 
 function small_variant(string $path): string

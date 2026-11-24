@@ -59,7 +59,36 @@ writer**. Users are never deleted – deactivate them in Admin → Users. Accoun
   empty. Fill in the **SMTP** settings for reliable delivery and press **Send
   test email** to check. Without SMTP, PHP `mail()` is used. If sending fails
   the enquiry is still saved and the error goes to the PHP error log.
-- The SMTP password is stored in the database `settings` table.
+- The SMTP password is stored in the database `settings` table – unless the
+  SMTP details are set in `includes/config.local.php` (see below), which then
+  override the Settings fields.
+
+### Sending through Amazon SES
+
+1. In the AWS console open **Amazon SES** in your region (e.g. `ap-south-1`
+   Mumbai) → **Identities** → **Create identity** → **Domain**, and add the
+   DKIM CNAME records it shows to your domain's DNS. Wait until it says
+   *Verified*. (Also add an SPF/DMARC record – SES shows recommendations.)
+2. **SMTP settings** → **Create SMTP credentials**. Save the SMTP username and
+   password – these are *not* your IAM access keys, and only work in that region.
+3. New SES accounts are in the **sandbox**: you can only send *to* verified
+   addresses. Either verify each admin's address under Identities, or use
+   **Account dashboard → Request production access**.
+4. Add to `includes/config.local.php`:
+   ```php
+   define('SMTP_HOST', 'email-smtp.ap-south-1.amazonaws.com'); // your region
+   define('SMTP_PORT', 587);
+   define('SMTP_ENCRYPTION', 'tls');
+   define('SMTP_USERNAME', 'your-ses-smtp-username');
+   define('SMTP_PASSWORD', 'your-ses-smtp-password');
+   ```
+   (Or enter the same values in Admin → Settings → Contact form emails.)
+5. In Admin → Settings set **"From" email address** to an address on the
+   verified domain (e.g. `noreply@yourdomain.lk`), save, and press
+   **Send test email**.
+
+Many hosts block outbound port 25 – SES works on 587 (TLS) or 465 (SSL).
+On EC2, ports 587/465 are open by default.
 
 ## Images
 

@@ -18,6 +18,15 @@ defined('DB_NAME') || define('DB_NAME', 'epicktours');
 defined('DB_USER') || define('DB_USER', 'root');
 defined('DB_PASS') || define('DB_PASS', '');
 
+// Outgoing email (SMTP). Optional: when SMTP_HOST is set here it overrides the
+// SMTP fields in Admin → Settings. Put these in config.local.php, not here.
+// Amazon SES example (use SES *SMTP credentials*, not IAM access keys):
+//   define('SMTP_HOST', 'email-smtp.ap-south-1.amazonaws.com'); // your SES region
+//   define('SMTP_PORT', 587);
+//   define('SMTP_ENCRYPTION', 'tls');   // 'tls' (587), 'ssl' (465) or 'none'
+//   define('SMTP_USERNAME', 'AKIA...');
+//   define('SMTP_PASSWORD', '...');
+
 // Largest image a CMS user may upload (bytes). PHP's upload_max_filesize and
 // post_max_size must be at least this big too.
 defined('MAX_UPLOAD_BYTES') || define('MAX_UPLOAD_BYTES', 15 * 1024 * 1024);

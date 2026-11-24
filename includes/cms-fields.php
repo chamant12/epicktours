@@ -46,7 +46,7 @@ $SETTINGS_FIELDS = [
         'enquiry_email_to' => ['label' => 'Send new enquiries to', 'type' => 'text', 'default' => '', 'help' => 'One or more emails, separated by commas. Leave empty to send to every active administrator.'],
         'mail_from_email'  => ['label' => '"From" email address', 'type' => 'text', 'default' => '', 'help' => 'Use an address on your own domain (e.g. noreply@yourdomain.lk). Leave empty to use the contact email above.'],
         'mail_from_name'   => ['label' => '"From" name', 'type' => 'text', 'default' => '', 'help' => 'Leave empty to use the site name.'],
-        'smtp_host'        => ['label' => 'SMTP server', 'type' => 'text', 'default' => '', 'help' => 'Recommended, e.g. mail.yourdomain.lk or smtp.gmail.com. Leave empty to use the server\'s built-in mail(), which often goes to spam.'],
+        'smtp_host'        => ['label' => 'SMTP server', 'type' => 'text', 'default' => '', 'help' => 'Recommended, e.g. email-smtp.ap-south-1.amazonaws.com (Amazon SES), mail.yourdomain.lk or smtp.gmail.com. Leave empty to use the server\'s built-in mail(), which often goes to spam.'],
         'smtp_port'        => ['label' => 'SMTP port', 'type' => 'text', 'default' => '587', 'help' => 'Usually 587 for TLS or 465 for SSL.'],
         'smtp_encryption'  => ['label' => 'SMTP encryption', 'type' => 'select', 'options' => ['tls' => 'TLS (port 587)', 'ssl' => 'SSL (port 465)', 'none' => 'None'], 'default' => 'tls'],
         'smtp_username'    => ['label' => 'SMTP username', 'type' => 'text', 'default' => ''],

@@ -44,7 +44,7 @@ if (!headers_sent()) {
     <div class="container header-inner">
         <a href="index.php" class="logo" aria-label="<?= e($siteName) ?> home">
             <?php if (image_exists($logo)): ?>
-                <img src="<?= e(img_url($logo)) ?>" alt="<?= e($siteName) ?>">
+                <img src="<?= e(img_url($logo)) ?>" alt="<?= e($siteName) ?>" style="--logo-h: <?= max(30, min(160, (int) setting('logo_height') ?: 70)) ?>px">
             <?php else: ?>
                 <svg class="logo-mark" viewBox="0 0 48 40" aria-hidden="true">
                     <path d="M4 38 C4 18 14 6 24 6 S44 18 44 38" fill="none" stroke="#c9971f" stroke-width="4"/>

@@ -62,6 +62,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Website address must start with http:// or https://';
                 continue;
             }
+            if ($key === 'logo_height' && $value !== '' && (!ctype_digit($value) || $value < 30 || $value > 160)) {
+                $errors[] = 'Logo height must be a number between 30 and 160.';
+                continue;
+            }
             if ($key === 'smtp_port' && $value !== '' && !ctype_digit($value)) {
                 $errors[] = 'SMTP port must be a number.';
                 continue;

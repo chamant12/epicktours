@@ -27,6 +27,7 @@ $SETTINGS_FIELDS = [
         'site_name'        => ['label' => 'Site name', 'type' => 'text', 'default' => 'EPICK Tours'],
         'site_tagline'     => ['label' => 'Tagline (under the logo)', 'type' => 'text', 'default' => 'Sri Lanka'],
         'logo'             => ['label' => 'Logo', 'type' => 'image', 'spec' => 'logo', 'default' => '', 'help' => 'Leave empty to use the built-in logo. Transparent PNG works best.'],
+        'logo_height'      => ['label' => 'Logo height (pixels)', 'type' => 'text', 'default' => '70', 'help' => 'Size of the uploaded logo in the header, 30–160. On phones it is limited to 56 px so the menu still fits.'],
         'site_url'         => ['label' => 'Website address', 'type' => 'text', 'default' => '', 'help' => 'e.g. https://srilankahoteldeals.lk – used for links in emails. Leave empty to detect automatically.'],
     ],
     'SEO defaults' => [

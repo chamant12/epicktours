@@ -251,7 +251,7 @@ p { margin: 0 0 1em; }
     .grid-3 { grid-template-columns: repeat(2, 1fr); }
     .themes { grid-template-columns: repeat(3, 1fr); }
     .split-hero-inner, .contact-layout, .about-grid { grid-template-columns: 1fr; }
-    .hero::before { background: linear-gradient(180deg, rgba(250,246,238,.95) 0%, rgba(250,246,238,.75) 100%); }
+    .hero::before { background: linear-gradient(180deg, rgba(250,246,238,.88) 0%, rgba(250,246,238,.6) 55%, rgba(250,246,238,.1) 100%); }
     .page-hero-icon { display: none; }
 }
 @media (max-width: 560px) {

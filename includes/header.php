@@ -11,6 +11,13 @@ $metaTitle = $metaTitle !== '' ? $metaTitle : ($pageTitle ?? $siteName) . ' | ' 
 $metaDescription = ($seoPage !== '' ? block($seoPage, 'meta_description') : '') ?: ($pageDescription ?? '') ?: setting('meta_description');
 $metaKeywords = ($seoPage !== '' ? block($seoPage, 'meta_keywords') : '') ?: setting('meta_keywords');
 $ogImage = $ogImage ?? (block('home', 'hero_image') ?: '');
+
+// Pages are built from the CMS: tell browsers and hosting/CDN caches
+// (incl. LiteSpeed) not to keep old copies, so new images/text show at once.
+if (!headers_sent()) {
+    header('Cache-Control: no-cache, must-revalidate, max-age=0');
+    header('X-LiteSpeed-Cache-Control: no-cache');
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -24,19 +31,19 @@ $ogImage = $ogImage ?? (block('home', 'hero_image') ?: '');
     <meta property="og:site_name" content="<?= e($siteName) ?>">
     <meta property="og:title" content="<?= e($metaTitle) ?>">
     <meta property="og:description" content="<?= e($metaDescription) ?>">
-    <?php if ($ogImage && is_file(ROOT . '/' . $ogImage)): ?><meta property="og:image" content="<?= e(site_url() . $ogImage) ?>"><?php endif; ?>
+    <?php if (image_exists($ogImage)): ?><meta property="og:image" content="<?= e(img_abs_url($ogImage)) ?>"><?php endif; ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:wght@500;600;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= (int) @filemtime(ROOT . '/assets/css/style.css') ?>">
 </head>
 <body>
 
 <header class="site-header">
     <div class="container header-inner">
         <a href="index.php" class="logo" aria-label="<?= e($siteName) ?> home">
-            <?php if ($logo && is_file(ROOT . '/' . $logo)): ?>
+            <?php if (image_exists($logo)): ?>
                 <img src="<?= e(img_url($logo)) ?>" alt="<?= e($siteName) ?>">
             <?php else: ?>
                 <svg class="logo-mark" viewBox="0 0 48 40" aria-hidden="true">

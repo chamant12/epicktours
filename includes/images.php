@@ -6,11 +6,47 @@
  * WebP support). Files go to uploads/YYYY/MM/.
  */
 
-/** URL of a stored image, relative to the current page. */
-function img_url(string $path, string $size = 'large'): string
+/**
+ * Clean up a stored image path: forward slashes, no leading slash, so
+ * "/uploads/x.jpg", "uploads\x.jpg" and "uploads/x.jpg" all work.
+ * Full http(s) URLs are returned unchanged.
+ */
+function image_path(?string $path): string
 {
+    $path = trim(str_replace('\\', '/', (string) $path));
+    return preg_match('#^(https?:)?//#i', $path) ? $path : ltrim($path, '/');
+}
+
+/** True when the image can be shown: a file that exists, or an external URL. */
+function image_exists(?string $path): bool
+{
+    $path = image_path($path);
+    if ($path === '') {
+        return false;
+    }
+    return preg_match('#^(https?:)?//#i', $path) || (!str_contains($path, '..') && is_file(ROOT . '/' . $path));
+}
+
+/** Web path of the site root, e.g. "/" or "/epicktours/". Same from admin and public pages. */
+function base_path(): string
+{
+    static $base = null;
+    return $base ??= rtrim((string) parse_url(site_url(), PHP_URL_PATH), '/') . '/';
+}
+
+/**
+ * URL of a stored image, from the site root (works on every page, admin
+ * included). "?v=<file time>" makes browsers and CDNs fetch a replaced file
+ * straight away instead of showing an old cached copy.
+ */
+function img_url(?string $path, string $size = 'large'): string
+{
+    $path = image_path($path);
     if ($path === '') {
         return '';
+    }
+    if (preg_match('#^(https?:)?//#i', $path)) {
+        return $path;
     }
     if ($size === 'small') {
         $small = small_variant($path);
@@ -18,22 +54,37 @@ function img_url(string $path, string $size = 'large'): string
             $path = $small;
         }
     }
-    return (defined('IN_ADMIN') ? '../' : '') . $path;
+    $time = @filemtime(ROOT . '/' . $path);
+    return base_path() . str_replace(['%2F', '%40'], ['/', '@'], rawurlencode($path)) . ($time ? '?v=' . $time : '');
+}
+
+/** Absolute URL of a stored image (for og:image and emails). */
+function img_abs_url(?string $path): string
+{
+    $url = img_url($path);
+    if ($url === '' || preg_match('#^(https?:)?//#i', $url)) {
+        return $url;
+    }
+    $parts = parse_url(site_url());
+    return ($parts['scheme'] ?? 'https') . '://' . ($parts['host'] ?? '') . (isset($parts['port']) ? ':' . $parts['port'] : '') . $url;
 }
 
 /**
- * Inline style for a photo tile. Falls back to a gradient (in CSS) when there
- * is no image yet.
+ * Inline style for every photo box on the site (banner, cards, gallery…).
+ * When an image is uploaded it always fills the box, overriding the empty
+ * gradient placeholder and any other CSS. No image → '' → the placeholder shows.
  */
 function bg(?string $path, string $size = 'large'): string
 {
-    if (!$path || !is_file(ROOT . '/' . $path)) {
+    if (!image_exists($path)) {
         return '';
     }
     $url = e(img_url($path, $size));
-    // Direct background-image (with !important) so the photo always wins over
-    // the stylesheet; --img is kept for any CSS that still reads it.
-    return "--img:url('{$url}'); background-image:url('{$url}') !important";
+    return "--img:url('{$url}');"
+        . " background-image:url('{$url}') !important;"
+        . ' background-size:cover !important;'
+        . ' background-position:center !important;'
+        . ' background-repeat:no-repeat !important';
 }
 
 function small_variant(string $path): string

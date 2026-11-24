@@ -34,9 +34,9 @@ function cms_field(string $name, array $f, string $value): string
 /** Image upload with preview, replace and remove. */
 function image_field(string $name, string $label, string $value, string $spec, string $help = ''): string
 {
-    $has = $value !== '' && is_file(ROOT . '/' . $value);
+    $has = image_exists($value);
     $preview = $has
-        ? '<img src="' . e(img_url($value)) . '?v=' . filemtime(ROOT . '/' . $value) . '" class="img-preview" alt="">'
+        ? '<img src="' . e(img_url($value)) . '" class="img-preview" alt="">'
         : '<div class="img-preview img-empty"><i class="fas fa-image"></i><span>No image</span></div>';
     $remove = $has
         ? '<div class="custom-control custom-checkbox mt-2"><input type="checkbox" class="custom-control-input" id="rm_' . e($name) . '" name="' . e($name) . '_remove" value="1"><label class="custom-control-label" for="rm_' . e($name) . '">Remove this image</label></div>'

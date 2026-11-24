@@ -148,30 +148,77 @@ function save_uploaded_image(array $file, string $specName): string
         throw new RuntimeException('The image has too many pixels (max 40 megapixels).');
     }
 
-    @ini_set('memory_limit', '512M');
-    $src = load_image($file['tmp_name'], $info[2]);
-    if (!$src) {
-        throw new RuntimeException('The image file seems to be damaged.');
+    return process_image($file['tmp_name'], $info[2], $specName);
+}
+
+/** True when the server can write WebP (the smallest format). */
+function webp_supported(): bool
+{
+    return function_exists('imagewebp') && (gd_info()['WebP Support'] ?? false);
+}
+
+/**
+ * Largest acceptable file size for an image of w×h pixels. Quality is lowered
+ * step by step until the file fits (e.g. home banner ≈ 230 KB).
+ */
+function image_byte_budget(int $w, int $h): int
+{
+    return max(40000, (int) ($w * $h * 0.12));
+}
+
+/**
+ * Resize, compress and save an image file for the given space ($IMAGE_SPECS).
+ * Used for new uploads and for re-optimising existing images.
+ * Returns the new path, e.g. uploads/2026/11/ab12cd34ef56ab78.webp
+ */
+function process_image(string $srcFile, int $type, string $specName): string
+{
+    global $IMAGE_SPECS;
+    $spec = $IMAGE_SPECS[$specName] ?? null;
+    if (!$spec) {
+        throw new RuntimeException('Unknown image type.');
     }
-    if ($info[2] === IMAGETYPE_JPEG) {
-        $src = fix_orientation($src, $file['tmp_name']);
+    if (!extension_loaded('gd')) {
+        throw new RuntimeException('The server is missing the PHP GD extension needed to process images.');
+    }
+
+    @ini_set('memory_limit', '512M');
+    @set_time_limit(120);
+    $src = load_image($srcFile, $type);
+    if (!$src) {
+        throw new RuntimeException('The image file seems to be damaged or this format is not supported by the server.');
+    }
+    if ($type === IMAGETYPE_JPEG) {
+        $src = fix_orientation($src, $srcFile);
+    }
+    if (!imageistruecolor($src)) {
+        imagepalettetotruecolor($src); // GIF / 8-bit PNG: needed for good resizing
     }
 
     $dir = 'uploads/' . date('Y/m');
-    if (!is_dir(ROOT . '/' . $dir) && !mkdir(ROOT . '/' . $dir, 0775, true)) {
+    if (!is_dir(ROOT . '/' . $dir) && !@mkdir(ROOT . '/' . $dir, 0775, true)) {
         throw new RuntimeException('The uploads folder is not writable.');
     }
 
-    $alpha = $info[2] !== IMAGETYPE_JPEG && has_transparency($src);
-    $ext = function_exists('imagewebp') ? 'webp' : ($alpha ? 'png' : 'jpg');
+    $alpha = $type !== IMAGETYPE_JPEG && has_transparency($src);
+    $ext = webp_supported() ? 'webp' : ($alpha ? 'png' : 'jpg');
     $path = $dir . '/' . bin2hex(random_bytes(8)) . '.' . $ext;
 
-    write_image(resize_image($src, $spec['w'], $spec['h'], $spec['mode']), ROOT . '/' . $path, $ext);
-    if (!empty($spec['small'])) {
-        [$sw, $sh] = $spec['small'];
-        write_image(resize_image($src, $sw, $sh, $spec['mode']), ROOT . '/' . small_variant($path), $ext);
+    try {
+        $main = resize_image($src, $spec['w'], $spec['h'], $spec['mode']);
+        write_image($main, ROOT . '/' . $path, $ext, image_byte_budget($spec['w'], $spec['h']));
+        if (!empty($spec['small'])) {
+            [$sw, $sh] = $spec['small'];
+            $small = resize_image($src, $sw, $sh, $spec['mode']);
+            write_image($small, ROOT . '/' . small_variant($path), $ext, image_byte_budget($sw, $sh));
+        }
+    } catch (Throwable $ex) {
+        @unlink(ROOT . '/' . $path);
+        @unlink(ROOT . '/' . small_variant($path));
+        throw $ex instanceof RuntimeException ? $ex : new RuntimeException('Could not process the image: ' . $ex->getMessage());
+    } finally {
+        imagedestroy($src);
     }
-    imagedestroy($src);
 
     return $path;
 }
@@ -263,26 +310,157 @@ function resize_image($src, int $tw, int $th, string $mode)
     return $dst;
 }
 
-function write_image($img, string $file, string $ext): void
+/**
+ * Save an image. WebP/JPEG start at IMAGE_QUALITY and, if the file is bigger
+ * than $maxBytes, are re-saved at lower quality (down to 55) until it fits.
+ * GD never copies EXIF/GPS metadata, so saved files are always stripped.
+ */
+function write_image($img, string $file, string $ext, int $maxBytes = 0): void
 {
-    $ok = false;
-    if ($ext === 'webp') {
-        $ok = imagewebp($img, $file, IMAGE_QUALITY);
-    } elseif ($ext === 'png') {
-        $ok = imagepng($img, $file, 9);
-    } else {
+    $flat = null;
+    if ($ext === 'jpg') {
         // JPEG has no transparency: flatten onto white
         $flat = imagecreatetruecolor(imagesx($img), imagesy($img));
         imagefill($flat, 0, 0, imagecolorallocate($flat, 255, 255, 255));
         imagecopy($flat, $img, 0, 0, 0, 0, imagesx($img), imagesy($img));
         imageinterlace($flat, true); // progressive JPEG
-        $ok = imagejpeg($flat, $file, IMAGE_QUALITY);
-        imagedestroy($flat);
     }
-    imagedestroy($img);
-    if (!$ok) {
-        throw new RuntimeException('Could not save the processed image.');
+
+    $ok = false;
+    try {
+        if ($ext === 'png') {
+            $ok = imagepng($img, $file, 9, PNG_ALL_FILTERS);
+        } else {
+            for ($quality = IMAGE_QUALITY; ; $quality -= 7) {
+                $ok = $ext === 'webp' ? imagewebp($img, $file, $quality) : imagejpeg($flat, $file, $quality);
+                clearstatcache(true, $file);
+                if (!$ok || !$maxBytes || $quality <= 55 || filesize($file) <= $maxBytes) {
+                    break;
+                }
+            }
+        }
+    } finally {
+        if ($flat) {
+            imagedestroy($flat);
+        }
+        imagedestroy($img);
     }
+    if (!$ok || !is_file($file) || filesize($file) === 0) {
+        throw new RuntimeException('Could not save the processed image (check that the uploads folder is writable).');
+    }
+}
+
+/**
+ * Every image the website uses, with where it comes from and how to save a
+ * new path for it. Used by Admin → Images.
+ */
+function image_inventory(): array
+{
+    global $SETTINGS_FIELDS, $PAGE_FIELDS;
+    $items = [];
+
+    $settings = q('SELECT skey, svalue FROM settings')->fetchAll(PDO::FETCH_KEY_PAIR);
+    foreach ($SETTINGS_FIELDS as $fields) {
+        foreach ($fields as $key => $f) {
+            if ($f['type'] === 'image' && ($settings[$key] ?? '') !== '') {
+                $items[] = ['where' => 'Settings – ' . $f['label'], 'edit' => 'settings.php', 'path' => $settings[$key], 'spec' => $f['spec'],
+                    'save' => fn ($p) => q('UPDATE settings SET svalue = ? WHERE skey = ?', [$p, $key])];
+            }
+        }
+    }
+
+    foreach (q("SELECT page, bkey, value FROM page_blocks WHERE value <> ''")->fetchAll() as $r) {
+        $f = page_field($r['page'], $r['bkey']);
+        if ($f && $f['type'] === 'image') {
+            $items[] = ['where' => ($PAGE_FIELDS[$r['page']]['title'] ?? $r['page']) . ' – ' . $f['label'], 'edit' => 'pages.php?page=' . urlencode($r['page']),
+                'path' => $r['value'], 'spec' => $f['spec'],
+                'save' => fn ($p) => q('UPDATE page_blocks SET value = ? WHERE page = ? AND bkey = ?', [$p, $r['page'], $r['bkey']])];
+        }
+    }
+
+    foreach (q("SELECT id, title, image FROM tours WHERE image <> ''")->fetchAll() as $r) {
+        $items[] = ['where' => 'Tour – ' . $r['title'] . ' (main image)', 'edit' => 'tour-edit.php?id=' . $r['id'], 'path' => $r['image'], 'spec' => 'tour',
+            'save' => fn ($p) => q('UPDATE tours SET image = ? WHERE id = ?', [$p, $r['id']])];
+    }
+    foreach (q('SELECT g.id, g.path, g.tour_id, t.title FROM tour_images g JOIN tours t ON t.id = g.tour_id ORDER BY t.title, g.sort_order')->fetchAll() as $r) {
+        $items[] = ['where' => 'Tour – ' . $r['title'] . ' (gallery)', 'edit' => 'tour-edit.php?id=' . $r['tour_id'], 'path' => $r['path'], 'spec' => 'tour',
+            'save' => fn ($p) => q('UPDATE tour_images SET path = ? WHERE id = ?', [$p, $r['id']])];
+    }
+    foreach (q("SELECT id, name, image FROM destinations WHERE image <> ''")->fetchAll() as $r) {
+        $items[] = ['where' => 'Destination – ' . $r['name'], 'edit' => 'destinations.php?edit=' . $r['id'], 'path' => $r['image'], 'spec' => 'destination',
+            'save' => fn ($p) => q('UPDATE destinations SET image = ? WHERE id = ?', [$p, $r['id']])];
+    }
+
+    foreach ($items as &$item) {
+        $item += image_status($item['path'], $item['spec']);
+    }
+    unset($item);
+    return $items;
+}
+
+/**
+ * Size/format details of a stored image and whether it still needs
+ * optimising: ['exists', 'width', 'height', 'bytes', 'format', 'problems' => [...]].
+ */
+function image_status(string $path, string $specName): array
+{
+    global $IMAGE_SPECS;
+    $spec = $IMAGE_SPECS[$specName];
+    $path = image_path($path);
+    $file = ROOT . '/' . $path;
+    $out = ['exists' => false, 'width' => 0, 'height' => 0, 'bytes' => 0, 'format' => '', 'problems' => []];
+
+    if (preg_match('#^(https?:)?//#i', $path)) {
+        $out['problems'][] = 'External link – upload the image instead';
+        return $out;
+    }
+    if (!image_exists($path)) {
+        $out['problems'][] = 'File missing on the server';
+        return $out;
+    }
+    $info = @getimagesize($file);
+    $out['exists'] = true;
+    $out['bytes'] = (int) filesize($file);
+    if (!$info) {
+        $out['problems'][] = 'Not a readable image';
+        return $out;
+    }
+    [$out['width'], $out['height']] = $info;
+    $out['format'] = strtoupper(image_type_to_extension($info[2], false));
+
+    if (webp_supported() && $info[2] !== IMAGETYPE_WEBP) {
+        $out['problems'][] = 'Not WebP';
+    }
+    if ($info[0] > $spec['w'] + 1 || $info[1] > $spec['h'] + 1) {
+        $out['problems'][] = "Too big ({$info[0]}×{$info[1]}, needs at most {$spec['w']}×{$spec['h']})";
+    }
+    if ($out['bytes'] > image_byte_budget($spec['w'], $spec['h']) * 1.5) {
+        $out['problems'][] = 'Heavy file (' . round($out['bytes'] / 1024) . ' KB)';
+    }
+    if (!empty($spec['small']) && !is_file(ROOT . '/' . small_variant($path))) {
+        $out['problems'][] = 'No thumbnail copy';
+    }
+    return $out;
+}
+
+/**
+ * Re-process one inventory item, save the new path in the database and
+ * delete the old file (only files this CMS created – hand-uploaded files
+ * such as uploads/logo.jpg are left in place).
+ */
+function optimise_inventory_item(array $item): string
+{
+    $file = ROOT . '/' . image_path($item['path']);
+    $info = @getimagesize($file);
+    if (!$info) {
+        throw new RuntimeException('Not a readable image.');
+    }
+    $new = process_image($file, $info[2], $item['spec']);
+    ($item['save'])($new);
+    if (preg_match('#^uploads/\d{4}/\d{2}/[0-9a-f]{16}\.(webp|jpg|png)$#', image_path($item['path']))) {
+        delete_image(image_path($item['path']));
+    }
+    return $new;
 }
 
 /**

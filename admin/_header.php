@@ -53,6 +53,7 @@ function nav_item(string $key, string $href, string $icon, string $label, string
             <hr class="sidebar-divider">
             <div class="sidebar-heading">Administration</div>
             <?php if (can('users')): ?><?= nav_item('users', 'users.php', 'fa-users', 'Users') ?><?php endif; ?>
+            <?php if (can('settings')): ?><?= nav_item('images', 'images.php', 'fa-images', 'Images') ?><?php endif; ?>
             <?php if (can('settings')): ?><?= nav_item('settings', 'settings.php', 'fa-cog', 'Settings') ?><?php endif; ?>
         <?php endif; ?>
 

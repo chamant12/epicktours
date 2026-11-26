@@ -12,10 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'test_
     $result = send_mail(
         [$me['email']],
         'Test email from ' . setting('site_name'),
-        '<p>Hello ' . e($me['name']) . ',</p><p>This is a test email from your website. If you are reading this, contact form notifications will be delivered.</p>'
+        '<p>Hello ' . e($me['name']) . ',</p><p>This is a test email from your website. If you are reading this, contact form notifications will be delivered.</p>',
+        null,
+        enquiry_cc()
     );
     if ($result === true) {
-        flash('success', 'Test email sent to ' . $me['email'] . '. Check the inbox (and the spam folder).');
+        $copy = enquiry_cc() ? ' with a copy to ' . implode(', ', enquiry_cc()) : '';
+        flash('success', 'Test email sent to ' . $me['email'] . $copy . '. Check the inbox (and the spam folder).');
     } else {
         flash('danger', 'The test email could not be sent: ' . $result);
     }
@@ -44,6 +47,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($f['type'] === 'select' && !isset($f['options'][$value])) {
                 $value = $f['default'];
+            }
+            if ($key === 'enquiry_email_cc' && $value !== '' && strtolower($value) !== 'none') {
+                $emails = array_filter(array_map('trim', explode(',', $value)));
+                $bad = array_filter($emails, fn ($m) => !filter_var($m, FILTER_VALIDATE_EMAIL));
+                if ($bad) {
+                    $errors[] = 'Also send a copy (CC) to: "' . implode('", "', $bad) . '" is not a valid email address.';
+                    continue;
+                }
+                $value = implode(', ', $emails);
             }
             if ($key === 'enquiry_email_to' && $value !== '') {
                 $emails = array_filter(array_map('trim', explode(',', $value)));
@@ -107,7 +119,7 @@ require __DIR__ . '/_header.php';
                         </div>
                     <?php endif; ?>
                     <p class="small text-muted mb-0">
-                        Enquiries currently go to: <strong><?= e(implode(', ', enquiry_recipients()) ?: 'nobody') ?></strong>.
+                        Enquiries currently go to: <strong><?= e(implode(', ', enquiry_recipients()) ?: 'nobody') ?></strong><?php if (enquiry_cc()): ?>, copy (CC) to <strong><?= e(implode(', ', enquiry_cc())) ?></strong><?php endif; ?>.
                         Save first, then use <em>Send test email</em> below to check delivery.
                     </p>
                 <?php endif; ?>

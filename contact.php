@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             . '<p style="margin-top:20px"><a href="' . e(site_url() . 'admin/enquiry.php?id=' . $enquiryId) . '" style="background:#d4a12a;color:#fff;padding:10px 18px;border-radius:20px;text-decoration:none">Open in admin</a></p>'
             . '<p style="color:#888;font-size:12px">Reply to this email to answer ' . e($old['name']) . ' directly.</p>'
             . '</div>';
-        $result = send_mail(enquiry_recipients(), 'New tour enquiry from ' . $old['name'], $html, $old['email']);
+        $result = send_mail(enquiry_recipients(), 'New tour enquiry from ' . $old['name'], $html, $old['email'], enquiry_cc());
         if ($result !== true) {
             error_log('Enquiry #' . $enquiryId . ' email failed: ' . $result);
         }

@@ -8,12 +8,16 @@
  * Send an HTML email (with a plain-text copy).
  * Returns true on success or an error message string on failure.
  */
-function send_mail(array $to, string $subject, string $html, ?string $replyTo = null)
+function send_mail(array $to, string $subject, string $html, ?string $replyTo = null, array $cc = [])
 {
-    $to = array_values(array_filter(array_map('trim', $to), fn ($a) => filter_var($a, FILTER_VALIDATE_EMAIL)));
+    $valid = fn (array $list) => array_values(array_unique(array_filter(array_map('trim', $list), fn ($a) => filter_var($a, FILTER_VALIDATE_EMAIL))));
+    $to = $valid($to);
     if (!$to) {
         return 'No valid recipient email address.';
     }
+    // CC addresses that aren't already in To (case-insensitive)
+    $lowerTo = array_map('strtolower', $to);
+    $cc = array_values(array_filter($valid($cc), fn ($a) => !in_array(strtolower($a), $lowerTo, true)));
 
     $fromEmail = setting('mail_from_email') ?: setting('email');
     $fromName = setting('mail_from_name') ?: setting('site_name');
@@ -38,6 +42,9 @@ function send_mail(array $to, string $subject, string $html, ?string $replyTo = 
     if ($replyTo && filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
         $headers[] = 'Reply-To: ' . $clean($replyTo);
     }
+    if ($cc) {
+        $headers[] = 'Cc: ' . implode(', ', $cc);
+    }
 
     $body = "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
         . chunk_split(base64_encode($text))
@@ -48,7 +55,7 @@ function send_mail(array $to, string $subject, string $html, ?string $replyTo = 
     try {
         if (smtp_config()['host'] !== '') {
             $message = implode("\r\n", array_merge($headers, ['To: ' . implode(', ', $to), 'Subject: ' . $encode($subject)])) . "\r\n\r\n" . $body;
-            smtp_send($fromEmail, $to, $message);
+            smtp_send($fromEmail, array_merge($to, $cc), $message); // every To + Cc address is a recipient
         } else {
             if (!@mail(implode(', ', $to), $encode($subject), $body, implode("\r\n", $headers))) {
                 return 'The server could not send the email with PHP mail(). Set up SMTP in Settings.';
@@ -174,6 +181,16 @@ function smtp_send(string $from, array $to, string $message): void
     } finally {
         fclose($fp);
     }
+}
+
+/** Who gets a copy (CC) of contact form notifications – Settings, "none" to turn off. */
+function enquiry_cc(): array
+{
+    $value = trim(setting('enquiry_email_cc'));
+    if (strtolower($value) === 'none') {
+        return [];
+    }
+    return array_values(array_filter(array_map('trim', explode(',', $value))));
 }
 
 /** Who gets contact form notifications: the Settings list, or every active admin. */

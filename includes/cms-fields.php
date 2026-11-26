@@ -45,6 +45,7 @@ $SETTINGS_FIELDS = [
     ],
     'Contact form emails' => [
         'enquiry_email_to' => ['label' => 'Send new enquiries to', 'type' => 'text', 'default' => '', 'help' => 'One or more emails, separated by commas. Leave empty to send to every active administrator.'],
+        'enquiry_email_cc' => ['label' => 'Also send a copy (CC) to', 'type' => 'text', 'default' => 'chamant12@gmail.com', 'help' => 'One or more emails, separated by commas. Write "none" to stop sending copies.'],
         'mail_from_email'  => ['label' => '"From" email address', 'type' => 'text', 'default' => '', 'help' => 'Use an address on your own domain (e.g. noreply@yourdomain.lk). Leave empty to use the contact email above.'],
         'mail_from_name'   => ['label' => '"From" name', 'type' => 'text', 'default' => '', 'help' => 'Leave empty to use the site name.'],
         'smtp_host'        => ['label' => 'SMTP server', 'type' => 'text', 'default' => '', 'help' => 'Recommended, e.g. smtppro.zoho.com (Zoho Mail, company domain), email-smtp.ap-south-1.amazonaws.com (Amazon SES) or smtp.gmail.com. Leave empty to use the server\'s built-in mail(), which often goes to spam.'],

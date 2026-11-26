@@ -20,6 +20,12 @@ defined('DB_PASS') || define('DB_PASS', '');
 
 // Outgoing email (SMTP). Optional: when SMTP_HOST is set here it overrides the
 // SMTP fields in Admin → Settings. Put these in config.local.php, not here.
+// Zoho Mail example (company domain mailbox; .in / .eu for those data centres):
+//   define('SMTP_HOST', 'smtppro.zoho.com');
+//   define('SMTP_PORT', 465);
+//   define('SMTP_ENCRYPTION', 'ssl');
+//   define('SMTP_USERNAME', 'info@epicktours.com');   // full Zoho address
+//   define('SMTP_PASSWORD', '...');                   // app-specific password if 2FA is on
 // Amazon SES example (use SES *SMTP credentials*, not IAM access keys):
 //   define('SMTP_HOST', 'email-smtp.ap-south-1.amazonaws.com'); // your SES region
 //   define('SMTP_PORT', 587);

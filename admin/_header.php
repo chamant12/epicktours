@@ -22,7 +22,7 @@ function nav_item(string $key, string $href, string $icon, string $label, string
     <link rel="stylesheet" href="assets/vendor/sb-admin-2.min.css">
     <link rel="stylesheet" href="assets/admin.css">
 </head>
-<body id="page-top">
+<body id="page-top" data-upload-limit="<?= upload_limit_bytes() ?>" data-post-limit="<?= post_limit_bytes() ?>">
 <div id="wrapper">
 
     <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">

@@ -63,6 +63,22 @@ writer**. Users are never deleted – deactivate them in Admin → Users. Accoun
   SMTP details are set in `includes/config.local.php` (see below), which then
   override the Settings fields.
 
+### Sending through Zoho Mail (current setup)
+
+Admin → Settings → Contact form emails:
+
+| Field | Value |
+|---|---|
+| SMTP server | `smtppro.zoho.com` (company domain mailbox). Use `smtppro.zoho.in` / `smtppro.zoho.eu` if the Zoho account is in the India / EU data centre (check the address bar when logged in to mail.zoho.*). Free personal accounts use `smtp.zoho.com`. |
+| SMTP port / encryption | `465` + SSL (or `587` + TLS) |
+| SMTP username | the full Zoho address, e.g. `info@epicktours.com` |
+| SMTP password | the mailbox password – or, if two-factor login is on, an **app-specific password** from Zoho Accounts → Security → App Passwords |
+| "From" email address | **the same address as the username** (or one of its Zoho aliases) – Zoho refuses anything else |
+
+Save, then press **Send test email**. If SMTP values are also defined in
+`includes/config.local.php`, those win over these fields (the Settings page
+says so).
+
 ### Sending through Amazon SES
 
 1. In the AWS console open **Amazon SES** in your region (e.g. `ap-south-1`

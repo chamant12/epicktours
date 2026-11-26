@@ -96,6 +96,7 @@ function smtp_send(string $from, array $to, string $message): void
 {
     ['host' => $host, 'port' => $port, 'enc' => $enc, 'user' => $user, 'pass' => $pass] = smtp_config();
     $isSes = (bool) preg_match('/^email-smtp\.[a-z0-9-]+\.amazonaws\.com$/i', $host);
+    $isZoho = (bool) preg_match('/^smtp(pro)?\.zoho(mail)?\.[a-z.]+$/i', $host);
 
     $fp = @stream_socket_client(($enc === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port, $errno, $errstr, 15);
     if (!$fp) {
@@ -142,9 +143,14 @@ function smtp_send(string $from, array $to, string $message): void
             try {
                 $cmd(base64_encode($pass), [235]);
             } catch (RuntimeException $ex) {
-                throw new RuntimeException('The SMTP username or password was rejected.' . ($isSes
-                    ? ' For Amazon SES use the SMTP credentials created in the SES console (SMTP settings → Create SMTP credentials), not IAM access keys, and make sure they belong to the same region as the SMTP server.'
-                    : ''));
+                $hint = '';
+                if ($isSes) {
+                    $hint = ' For Amazon SES use the SMTP credentials created in the SES console (SMTP settings → Create SMTP credentials), not IAM access keys, and make sure they belong to the same region as the SMTP server.';
+                } elseif ($isZoho) {
+                    $hint = ' For Zoho Mail: the username is the full email address; if two-factor authentication is on, use an app-specific password (Zoho Accounts → Security → App Passwords), not the normal password;'
+                        . ' a company/domain mailbox uses smtppro.zoho.com, and accounts in the India or EU data centre use smtppro.zoho.in / smtppro.zoho.eu.';
+                }
+                throw new RuntimeException('The SMTP username or password was rejected.' . $hint);
             }
         }
         $cmd('MAIL FROM:<' . $from . '>', [250]);
@@ -160,6 +166,9 @@ function smtp_send(string $from, array $to, string $message): void
     } catch (RuntimeException $ex) {
         if ($isSes && stripos($ex->getMessage(), 'not verified') !== false) {
             throw new RuntimeException($ex->getMessage() . ' – Amazon SES only sends from verified addresses/domains. While your SES account is in the sandbox, every recipient must be verified too (or request production access in the SES console).');
+        }
+        if ($isZoho && stripos($ex->getMessage(), 'MAIL FROM') !== false) {
+            throw new RuntimeException($ex->getMessage() . ' – Zoho Mail only sends from the mailbox you log in with (or one of its aliases). Set the "From" email address in Settings to ' . ($user ?: 'the Zoho login address') . '.');
         }
         throw $ex;
     } finally {

@@ -130,7 +130,7 @@ function save_uploaded_image(array $file, string $specName): string
 
     $err = $file['error'] ?? UPLOAD_ERR_NO_FILE;
     if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
-        throw new RuntimeException('The image is too large to upload.');
+        throw new RuntimeException('The image is bigger than this server accepts (' . mb_label(upload_limit_bytes()) . '). Reload the page (Ctrl+F5) so large photos are shrunk automatically before upload, then try again.');
     }
     if ($err !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
         throw new RuntimeException('The image could not be uploaded. Please try again.');
@@ -149,6 +149,46 @@ function save_uploaded_image(array $file, string $specName): string
     }
 
     return process_image($file['tmp_name'], $info[2], $specName);
+}
+
+/** A php.ini size such as "2M", "512K" or "1G" in bytes (0 = unlimited). */
+function ini_bytes(string $key): int
+{
+    $v = trim((string) ini_get($key));
+    if ($v === '' || $v === '-1') {
+        return 0;
+    }
+    $n = (float) $v;
+    switch (strtolower(substr($v, -1))) {
+        case 'g': $n *= 1024;
+        // no break
+        case 'm': $n *= 1024;
+        // no break
+        case 'k': $n *= 1024;
+    }
+    return (int) $n;
+}
+
+/**
+ * Biggest single file the server will actually accept: the smaller of PHP's
+ * upload_max_filesize / post_max_size and the CMS's MAX_UPLOAD_BYTES.
+ */
+function upload_limit_bytes(): int
+{
+    $limits = array_filter([ini_bytes('upload_max_filesize'), ini_bytes('post_max_size'), MAX_UPLOAD_BYTES]);
+    return (int) min($limits);
+}
+
+/** Total size of one form post the server accepts (post_max_size). */
+function post_limit_bytes(): int
+{
+    return ini_bytes('post_max_size') ?: 256 * 1048576;
+}
+
+/** "2 MB" style label. */
+function mb_label(int $bytes): string
+{
+    return rtrim(rtrim(number_format($bytes / 1048576, 1), '0'), '.') . ' MB';
 }
 
 /** True when the server can write WebP (the smallest format). */

@@ -50,6 +50,12 @@ require __DIR__ . '/_header.php';
     <h1 class="h3 mb-0 text-gray-800">Enquiries</h1>
     <a href="enquiries.php?<?= e($qs(['export' => 1])) ?>" class="btn btn-sm btn-success shadow-sm"><i class="fas fa-file-csv fa-sm"></i> Export to Excel (CSV)</a>
 </div>
+<?php if ($mailErr = mail_last_error()): ?>
+    <div class="alert alert-danger mb-4">
+        <strong>Email notifications are failing</strong> – last error <?= e($mailErr[0]) ?>: <?= e($mailErr[2]) ?>
+        <?php if (can('settings')): ?> <a href="settings.php" class="alert-link">Check email settings</a><?php endif; ?>
+    </div>
+<?php endif; ?>
 
 <div class="card shadow mb-4">
     <div class="card-header py-3">

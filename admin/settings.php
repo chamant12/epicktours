@@ -96,6 +96,14 @@ require __DIR__ . '/_header.php';
 ?>
 <h1 class="h3 mb-4 text-gray-800">Settings</h1>
 
+<?php if ($mailErr = mail_last_error()): ?>
+    <div class="alert alert-danger">
+        <strong><i class="fas fa-triangle-exclamation"></i> The last email could not be sent</strong> (<?= e($mailErr[0]) ?>, "<?= e($mailErr[1]) ?>"):<br>
+        <?= e($mailErr[2]) ?><br>
+        <small>Fix the Contact form email settings below (or SMTP_* in includes/config.local.php), then press <em>Send test email</em>. This message disappears after the next successful email.</small>
+    </div>
+<?php endif; ?>
+
 <form method="post" enctype="multipart/form-data">
     <?= csrf_field() ?>
     <?php foreach ($SETTINGS_FIELDS as $section => $fields): ?>
@@ -119,6 +127,7 @@ require __DIR__ . '/_header.php';
                         </div>
                     <?php endif; ?>
                     <p class="small text-muted mb-0">
+                        Emails are sent from: <strong><?= e(mail_from_email()) ?></strong><?php if (mail_from_email() !== (setting('mail_from_email') ?: setting('email'))): ?> (the SMTP login – the mail server does not allow any other "From" address)<?php endif; ?>.<br>
                         Enquiries currently go to: <strong><?= e(implode(', ', enquiry_recipients()) ?: 'nobody') ?></strong><?php if (enquiry_cc()): ?>, copy (CC) to <strong><?= e(implode(', ', enquiry_cc())) ?></strong><?php endif; ?>.
                         Save first, then use <em>Send test email</em> below to check delivery.
                     </p>

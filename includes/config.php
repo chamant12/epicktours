@@ -26,6 +26,7 @@ defined('DB_PASS') || define('DB_PASS', '');
 //   define('SMTP_ENCRYPTION', 'ssl');
 //   define('SMTP_USERNAME', 'info@epicktours.com');   // full Zoho address
 //   define('SMTP_PASSWORD', '...');                   // app-specific password if 2FA is on
+//   define('SMTP_FROM', 'bookings@epicktours.com');   // optional: send from a Zoho alias instead of the login
 // Amazon SES example (use SES *SMTP credentials*, not IAM access keys):
 //   define('SMTP_HOST', 'email-smtp.ap-south-1.amazonaws.com'); // your SES region
 //   define('SMTP_PORT', 587);

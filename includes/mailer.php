@@ -10,6 +10,51 @@
  */
 function send_mail(array $to, string $subject, string $html, ?string $replyTo = null, array $cc = [])
 {
+    $result = send_mail_now($to, $subject, $html, $replyTo, $cc);
+    // Remember the outcome so a failure shows up in the admin instead of only
+    // in the server's error log. A later successful send clears it.
+    try {
+        $value = $result === true ? '' : date('Y-m-d H:i') . ' | ' . $subject . ' | ' . $result;
+        q('INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)', ['mail_last_error', $value]);
+    } catch (Throwable $ex) {
+        // never let logging break sending
+    }
+    if ($result !== true) {
+        error_log('Email "' . $subject . '" failed: ' . $result);
+    }
+    return $result;
+}
+
+/** Last email failure as [when, subject, error], or null when the last send worked. */
+function mail_last_error(): ?array
+{
+    $v = (string) q("SELECT svalue FROM settings WHERE skey = 'mail_last_error'")->fetchColumn();
+    return $v === '' ? null : array_pad(explode(' | ', $v, 3), 3, '');
+}
+
+/**
+ * The address emails are sent from.
+ * Mailbox providers (Zoho, Gmail, Outlook/Office 365, Yahoo) refuse to send
+ * "from" any address other than the one you log in with ("550 Sender is not
+ * allowed to relay"), so for them the SMTP username is used automatically.
+ * SMTP_FROM in config.local.php overrides this (e.g. for a Zoho alias).
+ */
+function mail_from_email(): string
+{
+    if (defined('SMTP_FROM') && filter_var(SMTP_FROM, FILTER_VALIDATE_EMAIL)) {
+        return SMTP_FROM;
+    }
+    $smtp = smtp_config();
+    $mailboxHost = preg_match('/(^|\.)(zoho(mail)?|gmail|googlemail|office365|outlook|hotmail|live|yahoo)\.[a-z.]+$/i', $smtp['host']);
+    if ($mailboxHost && filter_var($smtp['user'], FILTER_VALIDATE_EMAIL)) {
+        return $smtp['user'];
+    }
+    return setting('mail_from_email') ?: setting('email');
+}
+
+/** The actual sending – use send_mail(). */
+function send_mail_now(array $to, string $subject, string $html, ?string $replyTo = null, array $cc = [])
+{
     $valid = fn (array $list) => array_values(array_unique(array_filter(array_map('trim', $list), fn ($a) => filter_var($a, FILTER_VALIDATE_EMAIL))));
     $to = $valid($to);
     if (!$to) {
@@ -19,7 +64,7 @@ function send_mail(array $to, string $subject, string $html, ?string $replyTo = 
     $lowerTo = array_map('strtolower', $to);
     $cc = array_values(array_filter($valid($cc), fn ($a) => !in_array(strtolower($a), $lowerTo, true)));
 
-    $fromEmail = setting('mail_from_email') ?: setting('email');
+    $fromEmail = mail_from_email();
     $fromName = setting('mail_from_name') ?: setting('site_name');
     if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
         return 'The "From" email address in Settings is not valid.';
@@ -121,13 +166,21 @@ function smtp_send(string $from, array $to, string $message): void
         }
         return $data;
     };
-    $cmd = function (?string $command, array $expect) use ($fp, $read): string {
+    $cmd = function (?string $command, array $expect, ?string $label = null) use ($fp, $read): string {
         if ($command !== null) {
             fwrite($fp, $command . "\r\n");
         }
         $reply = $read();
         if (!in_array((int) substr($reply, 0, 3), $expect, true)) {
-            $shown = $command && stripos($command, 'AUTH') === false && strlen($command) < 80 ? $command : 'SMTP step';
+            if ($label !== null) {
+                $shown = $label;
+            } elseif ($command === null) {
+                $shown = 'connecting';
+            } elseif (strlen($command) >= 80) {
+                $shown = 'sending the message';
+            } else {
+                $shown = $command;
+            }
             throw new RuntimeException('SMTP error after "' . $shown . '": ' . trim($reply ?: 'no reply'));
         }
         return $reply;
@@ -145,10 +198,10 @@ function smtp_send(string $from, array $to, string $message): void
             $cmd($ehlo, [250]);
         }
         if ($user !== '') {
-            $cmd('AUTH LOGIN', [334]);
-            $cmd(base64_encode($user), [334]);
+            $cmd('AUTH LOGIN', [334], 'login');
+            $cmd(base64_encode($user), [334], 'login');
             try {
-                $cmd(base64_encode($pass), [235]);
+                $cmd(base64_encode($pass), [235], 'login');
             } catch (RuntimeException $ex) {
                 $hint = '';
                 if ($isSes) {
@@ -174,8 +227,8 @@ function smtp_send(string $from, array $to, string $message): void
         if ($isSes && stripos($ex->getMessage(), 'not verified') !== false) {
             throw new RuntimeException($ex->getMessage() . ' – Amazon SES only sends from verified addresses/domains. While your SES account is in the sandbox, every recipient must be verified too (or request production access in the SES console).');
         }
-        if ($isZoho && stripos($ex->getMessage(), 'MAIL FROM') !== false) {
-            throw new RuntimeException($ex->getMessage() . ' – Zoho Mail only sends from the mailbox you log in with (or one of its aliases). Set the "From" email address in Settings to ' . ($user ?: 'the Zoho login address') . '.');
+        if (stripos($ex->getMessage(), 'relay') !== false || ($isZoho && stripos($ex->getMessage(), 'MAIL FROM') !== false)) {
+            throw new RuntimeException($ex->getMessage() . ' – the mail server only accepts emails "from" the mailbox you log in with (' . ($user ?: 'the SMTP username') . ') or one of its aliases. Emails were sent from ' . $from . '.');
         }
         throw $ex;
     } finally {
